@@ -1,20 +1,16 @@
 import pandas as pd
+import re
 
 df = pd.read_csv("data/raw_game_results.csv")
+df = df[df['W/L'].isin(['W', 'L', 'W-wo', 'L-wo'])].copy()
+df['season'] = df['season'].astype(str)
 
-print("=== Basic Info ===")
-print(f"Shape: {df.shape}")
-print(f"\nW/L value counts:")
-print(df['W/L'].value_counts())
+# Try the extraction
+df['date_str'] = df['Date'].str.extract(r'(\w+ \d+)$')[0] + ' ' + df['season']
+df['date'] = pd.to_datetime(df['date_str'], format='mixed', errors='coerce')
 
-print(f"\nHome_Away value counts:")
-print(df['Home_Away'].value_counts())
-
-print(f"\nSeason value counts:")
-print(df['season'].value_counts().sort_index())
-
-print(f"\nNull counts:")
-print(df.isnull().sum()[df.isnull().sum() > 0])
-
-print(f"\nSample of rows with unusual W/L values:")
-print(df[~df['W/L'].isin(['W', 'L', 'W-wo', 'L-wo'])].head(20))
+# Show rows where date parsing failed
+failed = df[df['date'].isna()]
+print(f"Failed date parses: {len(failed)}")
+print("\nSample failed rows:")
+print(failed[['Date', 'season', 'date_str']].head(20))
