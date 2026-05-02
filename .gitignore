@@ -1,0 +1,39 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Data
+data/raw_game_results.csv
+data/processed/
+*.csv
+*.parquet
+
+# Environment
+.env
+.env.*
+
+# Terraform
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfvars
+
+# AWS
+*.pem
+*.key
+.aws/
+
+# Notebooks
+notebooks/.ipynb_checkpoints/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Deployment
+package/
+*.zip
