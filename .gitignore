@@ -37,3 +37,13 @@ Thumbs.db
 # Deployment
 package/
 *.zip
+
+# Deployment packages
+package_ingestion/
+package_pipeline_trigger/
+package_prediction/
+package_query/
+deployment_ingestion.zip
+deployment_pipeline_trigger.zip
+deployment_prediction.zip
+deployment_query.zip
