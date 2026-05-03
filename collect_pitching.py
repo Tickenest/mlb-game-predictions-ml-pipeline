@@ -19,13 +19,12 @@ for season in SEASONS:
 combined = pd.concat(all_pitching, ignore_index=True)
 print(f"\nTotal rows: {len(combined)}")
 
-# Keep only what we need
-keep_cols = ['Name', 'Tm', 'GS', 'IP', 'ERA', 'WHIP', 'SO9', 'SO/W', 'season']
-combined = combined[keep_cols]
+# Keep all pitchers — separate starters and relievers in feature engineering
+keep_cols = ['Name', 'Tm', 'GS', 'G', 'IP', 'ERA', 'WHIP', 'SO9', 'SO/W', 'season']
+combined = combined[[c for c in keep_cols if c in combined.columns]]
 
-# Only keep pitchers who started at least one game
-starters = combined[combined['GS'] > 0].copy()
-print(f"Starters: {len(starters)}")
+print(f"Starters (GS > 0): {len(combined[combined['GS'] > 0])}")
+print(f"Relievers (GS == 0): {len(combined[combined['GS'] == 0])}")
 
-starters.to_csv("data/pitching_stats.csv", index=False)
+combined.to_csv("data/pitching_stats.csv", index=False)
 print("Saved to data/pitching_stats.csv")
