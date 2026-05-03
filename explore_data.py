@@ -1,16 +1,8 @@
 import pandas as pd
-import re
 
-df = pd.read_csv("data/raw_game_results.csv")
-df = df[df['W/L'].isin(['W', 'L', 'W-wo', 'L-wo'])].copy()
-df['season'] = df['season'].astype(str)
-
-# Try the extraction
-df['date_str'] = df['Date'].str.extract(r'(\w+ \d+)$')[0] + ' ' + df['season']
-df['date'] = pd.to_datetime(df['date_str'], format='mixed', errors='coerce')
-
-# Show rows where date parsing failed
-failed = df[df['date'].isna()]
-print(f"Failed date parses: {len(failed)}")
-print("\nSample failed rows:")
-print(failed[['Date', 'season', 'date_str']].head(20))
+df = pd.read_csv("data/game_schedule.csv")
+print(f"Total games: {len(df)}")
+print(f"Home probable pitcher present: {df['home_probable'].notna().sum()} ({df['home_probable'].notna().mean():.1%})")
+print(f"Away probable pitcher present: {df['away_probable'].notna().sum()} ({df['away_probable'].notna().mean():.1%})")
+print(f"\nSample rows missing probable pitchers:")
+print(df[df['home_probable'].isna()][['date', 'home_team', 'away_team', 'season']].head(10))

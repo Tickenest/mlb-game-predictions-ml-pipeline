@@ -9,12 +9,14 @@ from sklearn.metrics import (
     accuracy_score, roc_auc_score, log_loss,
     classification_report, confusion_matrix
 )
+from sklearn.impute import SimpleImputer
 import xgboost as xgb
 
-FEATURES_PATH = Path("data/processed/features.csv")
-MODEL_PATH = Path("data/models/xgb_model.pkl")
-ENCODERS_PATH = Path("data/models/encoders.pkl")
-METRICS_PATH = Path("data/models/metrics.json")
+FEATURES_PATH = Path("data/processed/features_v2.csv")
+MODEL_PATH = Path("data/models/xgb_model_v2.pkl")
+ENCODERS_PATH = Path("data/models/encoders_v2.pkl")
+IMPUTER_PATH = Path("data/models/imputer_v2.pkl")
+METRICS_PATH = Path("data/models/metrics_v2.json")
 
 FEATURE_COLS = [
     'month', 'is_day',
@@ -29,20 +31,24 @@ FEATURE_COLS = [
     'away_rolling_runs_allowed',
     'away_rolling_run_diff',
     'away_rolling_away_win_rate',
+    'home_starter_era',
+    'home_starter_whip',
+    'home_starter_so9',
+    'away_starter_era',
+    'away_starter_whip',
+    'away_starter_so9',
 ]
 
 TARGET_COL = 'home_win'
 
 
 def load_features(path: Path) -> pd.DataFrame:
-    """Load the feature matrix."""
     df = pd.read_csv(path)
     df['date'] = pd.to_datetime(df['date'])
     return df
 
 
 def encode_teams(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
-    """Label encode team names."""
     encoders = {}
     for col in ['home_team', 'away_team']:
         le = LabelEncoder()
@@ -52,18 +58,17 @@ def encode_teams(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
 
 
 def time_split(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Time-based train/test split.
-    Train: 2021-2024
-    Test: 2025-2026
-    """
     train = df[df['season'] <= 2024].copy()
     test = df[df['season'] >= 2025].copy()
     return train, test
 
 
-def train_model(X_train: pd.DataFrame, y_train: pd.Series) -> xgb.XGBClassifier:
-    """Train XGBoost classifier."""
+def train_model(X_train: pd.DataFrame,
+                y_train: pd.Series) -> tuple[xgb.XGBClassifier, SimpleImputer]:
+    # Impute missing pitcher stats with median
+    imputer = SimpleImputer(strategy='median')
+    X_train_imp = imputer.fit_transform(X_train)
+
     model = xgb.XGBClassifier(
         n_estimators=300,
         max_depth=4,
@@ -75,23 +80,14 @@ def train_model(X_train: pd.DataFrame, y_train: pd.Series) -> xgb.XGBClassifier:
         random_state=42,
         verbosity=0,
     )
-    model.fit(
-        X_train, y_train,
-        eval_set=[(X_train, y_train)],
-        verbose=False,
-    )
-    return model
+    model.fit(X_train_imp, y_train, verbose=False)
+    return model, imputer
 
 
-def evaluate_model(
-    model: xgb.XGBClassifier,
-    X_test: pd.DataFrame,
-    y_test: pd.Series,
-    label: str = "Test"
-) -> dict:
-    """Evaluate model and return metrics."""
-    y_pred = model.predict(X_test)
-    y_prob = model.predict_proba(X_test)[:, 1]
+def evaluate_model(model, imputer, X_test, y_test, label="Test") -> dict:
+    X_test_imp = imputer.transform(X_test)
+    y_pred = model.predict(X_test_imp)
+    y_prob = model.predict_proba(X_test_imp)[:, 1]
 
     metrics = {
         "label": label,
@@ -107,21 +103,16 @@ def evaluate_model(
     print(f"AUC-ROC:   {metrics['auc_roc']:.4f}")
     print(f"Log Loss:  {metrics['log_loss']:.4f}")
     print(f"Samples:   {metrics['n_samples']}")
-    print(f"Baseline (always predict home win): {metrics['home_win_rate']:.4f}")
+    print(f"Baseline:  {metrics['home_win_rate']:.4f}")
     print(f"\nClassification Report:")
     print(classification_report(y_test, y_pred,
                                 target_names=['Away Win', 'Home Win']))
     print("Confusion Matrix:")
     print(confusion_matrix(y_test, y_pred))
-
     return metrics
 
 
-def feature_importance(
-    model: xgb.XGBClassifier,
-    feature_cols: list
-) -> None:
-    """Print feature importance."""
+def feature_importance(model, feature_cols):
     importance = pd.DataFrame({
         'feature': feature_cols,
         'importance': model.feature_importances_
@@ -137,7 +128,6 @@ def main():
     print("Loading features...")
     df = load_features(FEATURES_PATH)
     print(f"  Total games: {len(df)}")
-    print(f"  Seasons: {sorted(df['season'].unique())}")
 
     print("\nEncoding teams...")
     df, encoders = encode_teams(df)
@@ -152,22 +142,23 @@ def main():
     X_test = test[FEATURE_COLS]
     y_test = test[TARGET_COL]
 
-    print("\nTraining XGBoost model...")
-    model = train_model(X_train, y_train)
+    print("\nTraining XGBoost model with pitcher features...")
+    model, imputer = train_model(X_train, y_train)
     print("  Training complete.")
 
-    # Evaluate on both train and test
-    train_metrics = evaluate_model(model, X_train, y_train, "Train")
-    test_metrics = evaluate_model(model, X_test, y_test, "Test")
+    train_metrics = evaluate_model(model, imputer, X_train, y_train, "Train")
+    test_metrics = evaluate_model(model, imputer, X_test, y_test, "Test")
 
     feature_importance(model, FEATURE_COLS)
 
-    # Save model and encoders
+    # Save everything
     MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
     with open(MODEL_PATH, 'wb') as f:
         pickle.dump(model, f)
     with open(ENCODERS_PATH, 'wb') as f:
         pickle.dump(encoders, f)
+    with open(IMPUTER_PATH, 'wb') as f:
+        pickle.dump(imputer, f)
     with open(METRICS_PATH, 'w') as f:
         json.dump({'train': train_metrics, 'test': test_metrics}, f, indent=2)
 

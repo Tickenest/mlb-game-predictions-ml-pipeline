@@ -1,0 +1,18 @@
+{
+  "train": {
+    "label": "Train",
+    "accuracy": 0.7034,
+    "auc_roc": 0.7785,
+    "log_loss": 0.5941,
+    "n_samples": 9898,
+    "home_win_rate": 0.5285
+  },
+  "test": {
+    "label": "Test",
+    "accuracy": 0.5772,
+    "auc_roc": 0.6014,
+    "log_loss": 0.6779,
+    "n_samples": 2824,
+    "home_win_rate": 0.5421
+  }
+}
