@@ -47,3 +47,8 @@ deployment_ingestion.zip
 deployment_pipeline_trigger.zip
 deployment_prediction.zip
 deployment_query.zip
+
+# React
+frontend/node_modules/
+frontend/build/
+frontend/src/config.js

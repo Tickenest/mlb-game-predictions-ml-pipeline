@@ -1,8 +1,7 @@
 import json
 import os
 import boto3
-import io
-import pandas as pd
+import requests
 from datetime import date, timedelta
 
 S3_CLIENT = boto3.client('s3')
@@ -26,20 +25,77 @@ def load_predictions(target_date: str) -> list[dict]:
     try:
         response = S3_CLIENT.get_object(Bucket=DATA_BUCKET, Key=key)
         return json.loads(response['Body'].read().decode('utf-8'))
-    except S3_CLIENT.exceptions.NoSuchKey:
+    except Exception:
         return []
-    except Exception as e:
-        print(f"Error loading predictions: {e}")
-        return []
+
+
+def get_actual_results(target_date: str) -> dict:
+    """
+    Fetch actual game results from MLB API.
+    Returns dict of game_pk -> winning team full name.
+    """
+    url = "https://statsapi.mlb.com/api/v1/schedule"
+    params = {
+        "date": target_date,
+        "sportId": 1,
+        "hydrate": "linescore",
+        "gameType": "R",
+    }
+    try:
+        response = requests.get(url, params=params, timeout=10)
+        response.raise_for_status()
+        data = response.json()
+    except Exception:
+        return {}
+
+    results = {}
+    for date_entry in data.get('dates', []):
+        for game in date_entry.get('games', []):
+            if game['status']['detailedState'] != 'Final':
+                continue
+            game_pk = game['gamePk']
+            home = game['teams']['home']
+            away = game['teams']['away']
+            home_score = home.get('score', 0)
+            away_score = away.get('score', 0)
+            if home_score > away_score:
+                results[game_pk] = home['team']['name']
+            else:
+                results[game_pk] = away['team']['name']
+
+    return results
+
+
+def enrich_with_results(predictions: list[dict],
+                         actual_results: dict) -> list[dict]:
+    """Add result field to each prediction."""
+    enriched = []
+    for pred in predictions:
+        game_pk = pred.get('game_pk')
+        actual_winner = actual_results.get(game_pk)
+        if actual_winner is None:
+            pred['result'] = 'pending'
+            pred['actual_winner'] = None
+        elif actual_winner == pred['predicted_winner']:
+            pred['result'] = 'correct'
+            pred['actual_winner'] = actual_winner
+        else:
+            pred['result'] = 'incorrect'
+            pred['actual_winner'] = actual_winner
+        enriched.append(pred)
+    return enriched
 
 
 def load_recent_predictions(days: int = 7) -> list[dict]:
-    """Load predictions for the last N days."""
+    """Load and enrich predictions for the last N days."""
     all_predictions = []
     for i in range(days):
         d = (date.today() - timedelta(days=i)).isoformat()
         preds = load_predictions(d)
-        all_predictions.extend(preds)
+        if preds:
+            actual = get_actual_results(d)
+            preds = enrich_with_results(preds, actual)
+            all_predictions.extend(preds)
     return all_predictions
 
 
@@ -73,14 +129,16 @@ def lambda_handler(event, context):
 
         if query_type == 'todays_predictions':
             target_date = params.get('date', date.today().isoformat())
-            data = load_predictions(target_date)
+            preds = load_predictions(target_date)
+            actual = get_actual_results(target_date)
+            preds = enrich_with_results(preds, actual)
             return {
                 'statusCode': 200,
                 'headers': cors_headers(),
                 'body': json.dumps({
                     'query_type': query_type,
                     'date': target_date,
-                    'data': data
+                    'data': preds
                 })
             }
 

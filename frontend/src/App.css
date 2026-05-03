@@ -1,0 +1,275 @@
+/* ── CSS Variables — Light Mode ───────────────────────────────────── */
+:root {
+    --bg-page:        #f0f2f5;
+    --bg-card:        #ffffff;
+    --bg-subtle:      #f8f9fa;
+    --bg-hover:       #fafbfc;
+    --text-primary:   #333333;
+    --text-secondary: #666666;
+    --text-heading:   #2c3e50;
+    --border:         #dee2e6;
+    --border-light:   #f0f2f5;
+    --accent:         #2563eb;
+    --accent-hover:   #1d4ed8;
+    --good:           #16a34a;
+    --over:           #dc2626;
+    --neutral:        #d97706;
+    --th-bg:          #f8f9fa;
+    --input-bg:       #ffffff;
+    --input-border:   #dddddd;
+    --button-bg:      #ffffff;
+    --button-text:    #555555;
+    --win-bg:         #dcfce7;
+    --win-text:       #166534;
+    --loss-bg:        #fee2e2;
+    --loss-text:      #991b1b;
+    --pending-bg:     #fef9c3;
+    --pending-text:   #854d0e;
+}
+
+/* ── CSS Variables — Dark Mode ────────────────────────────────────── */
+body.dark {
+    --bg-page:        #0f172a;
+    --bg-card:        #1e293b;
+    --bg-subtle:      #0f3460;
+    --bg-hover:       #1a2a4a;
+    --text-primary:   #e2e8f0;
+    --text-secondary: #94a3b8;
+    --text-heading:   #c8d8f0;
+    --border:         #334155;
+    --border-light:   #1e293b;
+    --accent:         #3b82f6;
+    --accent-hover:   #60a5fa;
+    --good:           #22c55e;
+    --over:           #ef4444;
+    --neutral:        #f59e0b;
+    --th-bg:          #0f3460;
+    --input-bg:       #0f3460;
+    --input-border:   #334155;
+    --button-bg:      #1e293b;
+    --button-text:    #cbd5e1;
+    --win-bg:         #14532d;
+    --win-text:       #86efac;
+    --loss-bg:        #7f1d1d;
+    --loss-text:      #fca5a5;
+    --pending-bg:     #713f12;
+    --pending-text:   #fde68a;
+}
+
+/* ── Base ─────────────────────────────────────────────────────────── */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg-page);
+    color: var(--text-primary);
+    line-height: 1.5;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+
+/* ── Layout ───────────────────────────────────────────────────────── */
+.app {
+    max-width: 1000px;
+    margin: 0 auto;
+    padding: 0 16px 40px;
+}
+
+.app-header {
+    padding: 32px 0 24px;
+    border-bottom: 2px solid var(--border);
+    margin-bottom: 24px;
+}
+
+.header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+}
+
+.app-header h1 {
+    font-size: 2rem;
+    color: var(--text-heading);
+}
+
+.subtitle {
+    color: var(--text-secondary);
+    margin-top: 4px;
+    font-size: 0.95rem;
+}
+
+.app-main {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+/* ── Dark Mode Toggle ─────────────────────────────────────────────── */
+.dark-mode-toggle {
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--button-bg);
+    color: var(--button-text);
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.15s;
+}
+
+.dark-mode-toggle:hover {
+    background: var(--accent);
+    color: white;
+    border-color: var(--accent);
+}
+
+/* ── Cards ────────────────────────────────────────────────────────── */
+.card {
+    background: var(--bg-card);
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+}
+
+.card h2 {
+    font-size: 1.2rem;
+    color: var(--text-heading);
+    margin-bottom: 16px;
+}
+
+/* ── Tables ───────────────────────────────────────────────────────── */
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+}
+
+.data-table th {
+    text-align: left;
+    padding: 8px 12px;
+    background: var(--th-bg);
+    border-bottom: 2px solid var(--border);
+    color: var(--text-secondary);
+    font-weight: 600;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    white-space: nowrap;
+}
+
+.data-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-light);
+    color: var(--text-primary);
+}
+
+.data-table tr:last-child td {
+    border-bottom: none;
+}
+
+.data-table tr:hover td {
+    background: var(--bg-hover);
+}
+
+/* ── Probability Bar ──────────────────────────────────────────────── */
+.prob-bar-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 200px;
+}
+
+.prob-bar {
+    flex: 1;
+    height: 8px;
+    background: var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.prob-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background: var(--accent);
+    transition: width 0.3s ease;
+}
+
+.prob-label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    min-width: 40px;
+    text-align: right;
+}
+
+/* ── Win/Loss Badge ───────────────────────────────────────────────── */
+.badge {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.badge-win {
+    background: var(--win-bg);
+    color: var(--win-text);
+}
+
+.badge-loss {
+    background: var(--loss-bg);
+    color: var(--loss-text);
+}
+
+.badge-pending {
+    background: var(--pending-bg);
+    color: var(--pending-text);
+}
+
+/* ── Metrics Grid ─────────────────────────────────────────────────── */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+}
+
+.metric-box {
+    background: var(--bg-subtle);
+    border-radius: 6px;
+    padding: 16px;
+    text-align: center;
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--accent);
+    line-height: 1;
+    margin-bottom: 6px;
+}
+
+.metric-label {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.metric-sublabel {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    margin-top: 4px;
+}
+
+/* ── Predicted Winner ─────────────────────────────────────────────── */
+.predicted-winner {
+    font-weight: 600;
+    color: var(--accent);
+}
+
+.confidence-high { color: var(--good); font-weight: 600; }
+.confidence-mid  { color: var(--neutral); font-weight: 600; }
+.confidence-low  { color: var(--text-secondary); }

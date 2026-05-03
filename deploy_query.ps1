@@ -7,7 +7,7 @@ New-Item -ItemType Directory -Path package_query | Out-Null
 
 Write-Host "Installing dependencies..."
 docker run --name query_build python:3.12 `
-    pip install boto3 pandas -t /package
+    pip install boto3 pandas requests -t /package
 docker cp query_build:/package/. ./package_query/
 docker rm query_build
 
