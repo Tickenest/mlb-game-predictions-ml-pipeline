@@ -52,3 +52,7 @@ deployment_query.zip
 frontend/node_modules/
 frontend/build/
 frontend/src/config.js
+
+# Documents
+MLB_Project_Deep_Dive.docx
+SageMaker_Debugging_Chronicle.docx
