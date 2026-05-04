@@ -144,12 +144,16 @@ def lambda_handler(event, context):
     # Convert new games to DataFrame
     new_df = pd.DataFrame(games)
 
-    # Append new data, avoiding duplicates on game_pk
+    # Append new data avoiding duplicates on game_pk
     if not existing.empty:
-        existing_pks = set(existing['game_pk'].astype(str))
-        new_df = new_df[~new_df['game_pk'].astype(str).isin(existing_pks)]
-        print(f"New unique games to add: {len(new_df)}")
-        combined = pd.concat([existing, new_df], ignore_index=True)
+        if 'game_pk' in existing.columns:
+            existing_pks = set(existing['game_pk'].astype(str))
+            new_df = new_df[~new_df['game_pk'].astype(str).isin(existing_pks)]
+            print(f"New unique games to add: {len(new_df)}")
+            combined = pd.concat([existing, new_df], ignore_index=True)
+        else:
+            print("WARNING: Existing data missing game_pk column — appending all new games")
+            combined = pd.concat([existing, new_df], ignore_index=True)
     else:
         combined = new_df
 

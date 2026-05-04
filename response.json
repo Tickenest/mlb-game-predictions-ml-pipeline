@@ -1,1 +1,1 @@
-{"statusCode": 200, "body": "{\"message\": \"Pipeline started successfully\", \"execution_arn\": \"arn:aws:sagemaker:us-east-1:387873491220:pipeline/mlb-predictions-training-pipeline/execution/qnxqpr338c6a\", \"execution_name\": \"mlb-pipeline-20260504-210140\", \"trigger_source\": \"manual\"}"}
+{"statusCode": 200, "body": "{\"message\": \"Successfully processed 15 new games for 2026-05-03\", \"total_rows\": 12646, \"new_rows\": 15}"}
