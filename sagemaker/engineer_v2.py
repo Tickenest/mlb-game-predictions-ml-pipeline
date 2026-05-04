@@ -35,14 +35,6 @@ FEATURE_COLS = [
 
 TARGET_COL = 'home_win'
 
-def parse_dates(date_series):
-    """Parse dates trying multiple formats — works across all pandas versions."""
-    result = pd.to_datetime(date_series, format='%b %d %Y', errors='coerce')
-    # Fill any that failed with a second attempt
-    mask = result.isna()
-    if mask.any():
-        result[mask] = pd.to_datetime(date_series[mask], errors='coerce')
-    return result
 
 def normalize_name(name):
     if pd.isna(name):
@@ -52,8 +44,47 @@ def normalize_name(name):
     return ascii_name.lower().strip()
 
 
+def detect_format(df: pd.DataFrame) -> str:
+    """Detect whether data is in old pybaseball format or new ingestion format."""
+    if 'game_pk' in df.columns and 'home_score' in df.columns:
+        return 'new'
+    return 'old'
+
+
+def load_and_clean_new(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse the new ingestion Lambda format."""
+    df = df.copy()
+    df = df[df['home_score'].notna() & df['away_score'].notna()].copy()
+    df['win'] = df['home_win'].astype(int)
+    df['is_home'] = 1
+    df['is_day'] = 0
+    df['R'] = pd.to_numeric(df['home_score'], errors='coerce')
+    df['RA'] = pd.to_numeric(df['away_score'], errors='coerce')
+    df['run_diff'] = df['R'] - df['RA']
+    df['Tm'] = df['home_team']
+    df['Opp'] = df['away_team']
+    df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
+    df['month'] = pd.to_datetime(df['date'], errors='coerce').dt.month
+    df['game_num'] = '1'
+    df['season'] = df['season'].astype(str)
+
+    # Add away team perspective rows
+    away = df.copy()
+    away['win'] = (1 - df['home_win']).astype(int)
+    away['is_home'] = 0
+    away['R'] = pd.to_numeric(df['away_score'], errors='coerce')
+    away['RA'] = pd.to_numeric(df['home_score'], errors='coerce')
+    away['run_diff'] = away['R'] - away['RA']
+    away['Tm'] = df['away_team']
+    away['Opp'] = df['home_team']
+
+    combined = pd.concat([df, away], ignore_index=True)
+    combined = combined.sort_values(['Tm', 'date']).reset_index(drop=True)
+    return combined
+
+
 def parse_dates(date_series):
-    """Parse dates trying multiple formats — works across all pandas versions."""
+    """Parse dates — works across all pandas versions."""
     result = pd.to_datetime(date_series, format='%b %d %Y', errors='coerce')
     mask = result.isna()
     if mask.any():
@@ -61,8 +92,8 @@ def parse_dates(date_series):
     return result
 
 
-def load_and_clean(path):
-    df = pd.read_csv(path)
+def load_and_clean_old(df: pd.DataFrame) -> pd.DataFrame:
+    """Parse the original pybaseball format."""
     df = df[df['W/L'].isin(['W', 'L', 'W-wo', 'L-wo'])].copy()
     df['win'] = df['W/L'].isin(['W', 'W-wo']).astype(int)
     df['is_home'] = (df['Home_Away'] == 'Home').astype(int)
@@ -73,11 +104,10 @@ def load_and_clean(path):
 
     df['date_clean'] = df['Date'].str.replace(r'\s*\(\d\)$', '', regex=True)
     df['date_str'] = df['date_clean'].str.extract(r'(\w+ \d+)$')[0] + ' ' + df['season'].astype(str)
-
-    # Parse dates in a way that works across all pandas versions
     df['date'] = parse_dates(df['date_str']).dt.strftime('%Y-%m-%d')
     df['month'] = pd.to_datetime(df['date'], errors='coerce').dt.month
     df['game_num'] = df['Date'].str.extract(r'\((\d)\)$')[0].fillna('1')
+    df['season'] = df['season'].astype(str)
 
     drop_cols = ['W/L', 'Home_Away', 'Inn', 'W-L', 'Rank', 'GB', 'Win',
                  'Loss', 'Save', 'Time', 'D/N', 'Attendance', 'cLI',
@@ -87,7 +117,19 @@ def load_and_clean(path):
     return df
 
 
-def add_rolling_features(df, window=ROLLING_WINDOW):
+def load_and_clean(path) -> pd.DataFrame:
+    """Load and clean game results — handles both old and new formats."""
+    df = pd.read_csv(path)
+    fmt = detect_format(df)
+    print(f"  Detected format: {fmt}")
+    if fmt == 'new':
+        return load_and_clean_new(df)
+    else:
+        return load_and_clean_old(df)
+
+
+def add_rolling_features(df: pd.DataFrame, window: int = ROLLING_WINDOW) -> pd.DataFrame:
+    """Add rolling team statistics."""
     df = df.copy()
     for col, new_col in [
         ('win', 'rolling_win_rate'),
@@ -117,7 +159,8 @@ def add_rolling_features(df, window=ROLLING_WINDOW):
     return df
 
 
-def load_schedule(path):
+def load_schedule(path) -> pd.DataFrame:
+    """Load MLB API schedule with probable pitchers."""
     df = pd.read_csv(path)
     df['date'] = pd.to_datetime(df['date'], errors='coerce').dt.strftime('%Y-%m-%d')
     df['home_pitcher_norm'] = df['home_probable'].apply(normalize_name)
@@ -126,7 +169,8 @@ def load_schedule(path):
     return df
 
 
-def load_pitching(path):
+def load_pitching(path) -> pd.DataFrame:
+    """Load pitcher seasonal stats."""
     df = pd.read_csv(path)
     df['pitcher_norm'] = df['Name'].apply(normalize_name)
     for col in ['ERA', 'WHIP', 'SO9']:
@@ -135,16 +179,22 @@ def load_pitching(path):
     df['IP'] = pd.to_numeric(df['IP'], errors='coerce')
     df['GS'] = pd.to_numeric(df['GS'], errors='coerce').fillna(0)
     df['team_primary'] = df['Tm'].str.split(',').str[0].str.strip()
-    df['season'] = df['season'].astype(str)  # Add this line
+    df['season'] = df['season'].astype(str)
     return df
 
 
-def build_game_features(df, schedule, pitching):
+def build_game_features(df: pd.DataFrame, schedule: pd.DataFrame,
+                         pitching: pd.DataFrame) -> pd.DataFrame:
+    """Build one row per game with team and pitcher features."""
+
+    # Separate home and away
     home = df[df['is_home'] == 1].copy()
     away = df[df['is_home'] == 0].copy()
 
     home = home.rename(columns={
-        'Tm': 'home_team', 'Opp': 'away_team', 'win': 'home_win',
+        'Tm': 'home_team',
+        'Opp': 'away_team',
+        'win': 'home_win',
         'rolling_win_rate': 'home_rolling_win_rate',
         'rolling_runs_scored': 'home_rolling_runs_scored',
         'rolling_runs_allowed': 'home_rolling_runs_allowed',
@@ -161,21 +211,19 @@ def build_game_features(df, schedule, pitching):
         'rolling_away_win_rate': 'away_rolling_away_win_rate',
     })
 
+    # Drop duplicate column names that may come from new format raw data
+    home = home.loc[:, ~home.columns.duplicated()]
+    away = away.loc[:, ~away.columns.duplicated()]
+
     away_cols = [
         'away_team_check', 'date', 'season', 'game_num',
         'away_rolling_win_rate', 'away_rolling_runs_scored',
         'away_rolling_runs_allowed', 'away_rolling_run_diff',
         'away_rolling_away_win_rate',
     ]
-    away = away[away_cols]
+    away = away[[c for c in away_cols if c in away.columns]]
 
-    home['season'] = home['season'].astype(str)
-    home['game_num'] = home['game_num'].astype(str)
-    home['date'] = home['date'].astype(str)
-    away['season'] = away['season'].astype(str)
-    away['game_num'] = away['game_num'].astype(str)
-    away['date'] = away['date'].astype(str)
-
+    # Merge home and away
     print(f"  Home games before merge: {len(home)}")
     print(f"  Away games before merge: {len(away)}")
     print(f"  Home date dtype: {home['date'].dtype}")
@@ -191,9 +239,8 @@ def build_game_features(df, schedule, pitching):
         right_on=['away_team_check', 'date', 'season', 'game_num'],
         how='inner'
     )
-
+    games = games.drop(columns=['away_team_check'], errors='ignore')
     print(f"  Games after merge: {len(games)}")
-    games = games.drop(columns=['away_team_check'])
 
     abbrev_map = {
         'ARI': 'Arizona Diamondbacks', 'ATL': 'Atlanta Braves',
@@ -221,9 +268,6 @@ def build_game_features(df, schedule, pitching):
         'date', 'home_team', 'away_team',
         'home_pitcher_norm', 'away_pitcher_norm', 'season'
     ]].copy()
-
-    schedule_slim['date'] = schedule_slim['date'].astype(str)
-    schedule_slim['season'] = schedule_slim['season'].astype(str)
 
     games = games.merge(
         schedule_slim,
@@ -320,9 +364,6 @@ def main():
     train, test = time_split(games)
     print(f"  Train: {len(train)}, Test: {len(test)}")
 
-    # Save train and test feature matrices
-    # SageMaker XGBoost built-in expects CSV with target as first column
-    # and no header
     train_out = OUTPUT_PATH / "train"
     test_out = OUTPUT_PATH / "test"
     train_out.mkdir(parents=True, exist_ok=True)
@@ -333,12 +374,10 @@ def main():
     train_target = train[TARGET_COL]
     test_target = test[TARGET_COL]
 
-    # Fill NaN with median for SageMaker XGBoost
     medians = train_features.median()
     train_features = train_features.fillna(medians)
     test_features = test_features.fillna(medians)
 
-    # SageMaker XGBoost built-in: target first, no header
     train_csv = pd.concat([train_target.reset_index(drop=True),
                            train_features.reset_index(drop=True)], axis=1)
     test_csv = pd.concat([test_target.reset_index(drop=True),
@@ -347,10 +386,8 @@ def main():
     train_csv.to_csv(train_out / "train.csv", index=False, header=False)
     test_csv.to_csv(test_out / "test.csv", index=False, header=False)
 
-    # Save medians for use in evaluation and inference
-    medians_dict = medians.to_dict()
     with open(OUTPUT_PATH / "medians.json", 'w') as f:
-        json.dump(medians_dict, f)
+        json.dump(medians.to_dict(), f)
 
     print(f"  Saved train: {len(train_csv)} rows")
     print(f"  Saved test: {len(test_csv)} rows")
