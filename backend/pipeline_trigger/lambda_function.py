@@ -9,16 +9,18 @@ PIPELINE_NAME = os.environ.get('PIPELINE_NAME', 'mlb-predictions-training-pipeli
 
 def lambda_handler(event, context):
     """
-    Triggered by S3 when new raw data is uploaded.
+    Triggered by S3 when new raw data is uploaded, or manually.
     Starts the SageMaker training pipeline.
     """
-    print(f"S3 event received: {json.dumps(event)}")
+    print(f"Event received: {json.dumps(event)}")
 
-    # Extract bucket and key from S3 event
+    # Extract trigger source description
+    trigger_source = "manual"
     for record in event.get('Records', []):
         bucket = record['s3']['bucket']['name']
         key = record['s3']['object']['key']
-        print(f"New data uploaded: s3://{bucket}/{key}")
+        trigger_source = f"s3://{bucket}/{key}"
+        print(f"New data uploaded: {trigger_source}")
 
     # Start the SageMaker pipeline
     execution_name = f"mlb-pipeline-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
@@ -27,7 +29,7 @@ def lambda_handler(event, context):
         response = SAGEMAKER_CLIENT.start_pipeline_execution(
             PipelineName=PIPELINE_NAME,
             PipelineExecutionDisplayName=execution_name,
-            PipelineExecutionDescription=f"Triggered by new data: {key}",
+            PipelineExecutionDescription=f"Triggered by: {trigger_source}",
         )
         execution_arn = response['PipelineExecutionArn']
         print(f"Pipeline started: {execution_arn}")
@@ -38,6 +40,7 @@ def lambda_handler(event, context):
                 'message': 'Pipeline started successfully',
                 'execution_arn': execution_arn,
                 'execution_name': execution_name,
+                'trigger_source': trigger_source,
             })
         }
 

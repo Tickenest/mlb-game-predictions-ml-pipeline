@@ -33,6 +33,16 @@ resource "aws_iam_role_policy" "sagemaker_execution" {
       },
       {
         Effect = "Allow"
+        Action = ["iam:PassRole"]
+        Resource = "arn:aws:iam::387873491220:role/mlb-predictions-sagemaker-role"
+        Condition = {
+          StringEquals = {
+            "iam:PassedToService" = "sagemaker.amazonaws.com"
+          }
+        }
+      },
+      {
+        Effect = "Allow"
         Action = [
           "logs:CreateLogGroup",
           "logs:CreateLogStream",

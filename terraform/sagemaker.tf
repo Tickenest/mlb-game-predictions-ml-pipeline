@@ -40,7 +40,12 @@ resource "aws_sagemaker_pipeline" "training" {
       {
         Name = "FeatureEngineering"
         Type = "Processing"
+        CacheConfig = {
+          Enabled = false
+          ExpireAfter = "PT1H"
+        }
         Arguments = {
+          RoleArn = var.sagemaker_execution_role_arn
           ProcessingResources = {
             ClusterConfig = {
               InstanceCount  = 1
@@ -92,7 +97,12 @@ resource "aws_sagemaker_pipeline" "training" {
         Name      = "Training"
         Type      = "Training"
         DependsOn = ["FeatureEngineering"]
+        CacheConfig = {
+          Enabled = false
+          ExpireAfter = "PT1H"
+        }
         Arguments = {
+          RoleArn = var.sagemaker_execution_role_arn
           AlgorithmSpecification = {
             TrainingImage     = "683313688378.dkr.ecr.us-east-1.amazonaws.com/sagemaker-xgboost:1.7-1"
             TrainingInputMode = "File"
@@ -140,6 +150,7 @@ resource "aws_sagemaker_pipeline" "training" {
         Type      = "Processing"
         DependsOn = ["Training"]
         Arguments = {
+          RoleArn = var.sagemaker_execution_role_arn
           ProcessingResources = {
             ClusterConfig = {
               InstanceCount  = 1
@@ -161,24 +172,24 @@ resource "aws_sagemaker_pipeline" "training" {
                 S3InputMode   = "File"
               }
             },
-            {
-              InputName = "model"
-              S3Input = {
-                S3Uri         = "s3://${aws_s3_bucket.sagemaker.id}/models/"
-                LocalPath     = "/opt/ml/processing/input/model"
-                S3DataType    = "S3Prefix"
-                S3InputMode   = "File"
-              }
-            },
-            {
-              InputName = "test_data"
-              S3Input = {
-                S3Uri         = "s3://${aws_s3_bucket.sagemaker.id}/features/test/"
-                LocalPath     = "/opt/ml/processing/input/test"
-                S3DataType    = "S3Prefix"
-                S3InputMode   = "File"
-              }
-            },
+          {
+            InputName = "model"
+            S3Input = {
+              S3Uri         = "s3://${aws_s3_bucket.sagemaker.id}/models/"
+              LocalPath     = "/opt/ml/processing/input/model"
+              S3DataType    = "S3Prefix"
+              S3InputMode   = "File"
+            }
+          },
+          {
+            InputName = "test_data"
+            S3Input = {
+              S3Uri         = "s3://${aws_s3_bucket.sagemaker.id}/features/test/"
+              LocalPath     = "/opt/ml/processing/input/test"
+              S3DataType    = "S3Prefix"
+              S3InputMode   = "File"
+            }
+          },
           ]
           ProcessingOutputConfig = {
             Outputs = [
