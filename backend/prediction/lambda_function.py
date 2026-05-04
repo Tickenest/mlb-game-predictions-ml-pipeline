@@ -13,7 +13,7 @@ from sklearn.impute import SimpleImputer
 S3_CLIENT = boto3.client('s3')
 SAGEMAKER_RUNTIME = boto3.client('sagemaker-runtime')
 DATA_BUCKET = os.environ.get('DATA_BUCKET')
-SAGEMAKER_ENDPOINT = os.environ.get('SAGEMAKER_ENDPOINT')
+SAGEMAKER_ENDPOINT = os.environ.get('SAGEMAKER_ENDPOINT', 'mlb-predictions-serverless-endpoint')
 
 ROLLING_WINDOW = 15
 FEATURE_COLS = [
@@ -58,7 +58,7 @@ NAME_TO_ABBREV = {
 }
 
 
-def normalize_name(name: str) -> str:
+def normalize_name(name):
     if pd.isna(name) or name is None:
         return None
     nfkd = unicodedata.normalize('NFKD', str(name))
@@ -66,27 +66,26 @@ def normalize_name(name: str) -> str:
     return ascii_name.lower().strip()
 
 
-def load_model_artifacts() -> tuple:
-    """Load model, encoders, and imputer from S3."""
+def load_artifacts():
+    """Load encoders and imputer from S3."""
     artifacts = {}
     for name, key in [
-        ('model', 'models/xgb_model_v2.pkl'),
         ('encoders', 'models/encoders_v2.pkl'),
         ('imputer', 'models/imputer_v2.pkl'),
     ]:
         response = S3_CLIENT.get_object(Bucket=DATA_BUCKET, Key=key)
         artifacts[name] = pickle.loads(response['Body'].read())
-    return artifacts['model'], artifacts['encoders'], artifacts['imputer']
+    return artifacts['encoders'], artifacts['imputer']
 
 
-def load_raw_data() -> pd.DataFrame:
+def load_raw_data():
     """Load raw game results from S3."""
     response = S3_CLIENT.get_object(Bucket=DATA_BUCKET, Key='raw/game_results.csv')
     df = pd.read_csv(io.BytesIO(response['Body'].read()))
     return df
 
 
-def load_pitching_stats() -> pd.DataFrame:
+def load_pitching_stats():
     """Load pitcher seasonal stats from S3."""
     response = S3_CLIENT.get_object(Bucket=DATA_BUCKET, Key='raw/pitching_stats.csv')
     df = pd.read_csv(io.BytesIO(response['Body'].read()))
@@ -97,7 +96,7 @@ def load_pitching_stats() -> pd.DataFrame:
     return df
 
 
-def get_todays_games(target_date: str) -> list[dict]:
+def get_todays_games(target_date):
     """Fetch today's games and probable starters from MLB API."""
     url = "https://statsapi.mlb.com/api/v1/schedule"
     params = {
@@ -142,47 +141,30 @@ def get_todays_games(target_date: str) -> list[dict]:
     return games
 
 
-def compute_rolling_stats(raw_df: pd.DataFrame, team: str,
-                           as_of_date: str, is_home: bool) -> dict:
+def compute_rolling_stats(raw_df, team, as_of_date, is_home):
     """Compute rolling team stats from raw data."""
     df = raw_df.copy()
-    df = df[df['W/L'].isin(['W', 'L', 'W-wo', 'L-wo'])].copy() if 'W/L' in df.columns else df
-    df['win'] = df['home_win'] if 'home_win' in df.columns else (
-        df['W/L'].isin(['W', 'W-wo']).astype(int)
-    )
+    df = df[df['W/L'].isin(['W', 'L', 'W-wo', 'L-wo'])].copy()
+    df['win'] = df['W/L'].isin(['W', 'W-wo']).astype(int)
+    df['is_home'] = (df['Home_Away'] == 'Home').astype(int)
+    df['R'] = pd.to_numeric(df['R'], errors='coerce')
+    df['RA'] = pd.to_numeric(df['RA'], errors='coerce')
+    df['run_diff'] = df['R'] - df['RA']
 
-    if 'home_team' in df.columns:
-        # New format from ingestion Lambda
-        home_games = df[df['home_team'] == team].copy()
-        away_games = df[df['away_team'] == team].copy()
-        home_games['is_home'] = 1
-        home_games['R'] = home_games['home_score']
-        home_games['RA'] = home_games['away_score']
-        home_games['win'] = home_games['home_win']
-        away_games['is_home'] = 0
-        away_games['R'] = away_games['away_score']
-        away_games['RA'] = away_games['home_score']
-        away_games['win'] = 1 - away_games['home_win']
-        team_df = pd.concat([home_games, away_games])
-        team_df['date'] = pd.to_datetime(team_df['date'])
-    else:
-        # Legacy format from pybaseball
-        team_df = df[df['Tm'] == team].copy()
-        team_df['is_home'] = (team_df['Home_Away'] == 'Home').astype(int)
-        team_df['R'] = pd.to_numeric(team_df['R'], errors='coerce')
-        team_df['RA'] = pd.to_numeric(team_df['RA'], errors='coerce')
-        team_df['date_clean'] = team_df['Date'].str.replace(
-            r'\s*\(\d\)$', '', regex=True
-        )
-        team_df['date_str'] = team_df['date_clean'].str.extract(
-            r'(\w+ \d+)$'
-        )[0] + ' ' + team_df['season'].astype(str)
-        team_df['date'] = pd.to_datetime(
-            team_df['date_str'], format='mixed', errors='coerce'
+    df['date_clean'] = df['Date'].str.replace(r'\s*\(\d\)$', '', regex=True)
+    df['date_str'] = df['date_clean'].str.extract(
+        r'(\w+ \d+)$'
+    )[0] + ' ' + df['season'].astype(str)
+    df['date'] = pd.to_datetime(df['date_str'], format='%b %d %Y', errors='coerce')
+    mask = df['date'].isna()
+    if mask.any():
+        df.loc[mask, 'date'] = pd.to_datetime(
+            df.loc[mask, 'date_str'], errors='coerce'
         )
 
-    team_df = team_df[
-        team_df['date'] < pd.to_datetime(as_of_date)
+    team_df = df[
+        (df['Tm'] == team) &
+        (df['date'] < pd.to_datetime(as_of_date))
     ].sort_values('date').tail(ROLLING_WINDOW)
 
     if len(team_df) < 5:
@@ -210,8 +192,8 @@ def compute_rolling_stats(raw_df: pd.DataFrame, team: str,
     return stats
 
 
-def get_pitcher_stats(pitcher_name: str, season: int,
-                       pitching_df: pd.DataFrame) -> dict:
+def get_pitcher_stats(pitcher_name, season, pitching_df):
+    """Look up pitcher seasonal stats."""
     norm = normalize_name(pitcher_name)
     match = pitching_df[
         (pitching_df['pitcher_norm'] == norm) &
@@ -227,8 +209,8 @@ def get_pitcher_stats(pitcher_name: str, season: int,
     }
 
 
-def build_feature_row(game: dict, raw_df: pd.DataFrame,
-                       pitching_df: pd.DataFrame, encoders: dict) -> dict:
+def build_feature_row(game, raw_df, pitching_df, encoders):
+    """Build a feature dict for one game."""
     target_date = game['date']
     season = int(target_date[:4])
 
@@ -274,17 +256,29 @@ def build_feature_row(game: dict, raw_df: pd.DataFrame,
     }
 
 
+def invoke_endpoint(feature_row, imputer):
+    """Send features to SageMaker serverless endpoint."""
+    X = pd.DataFrame([feature_row])[FEATURE_COLS]
+    X_imp = imputer.transform(X)
+    csv_row = ','.join([str(v) for v in X_imp[0]])
+
+    response = SAGEMAKER_RUNTIME.invoke_endpoint(
+        EndpointName=SAGEMAKER_ENDPOINT,
+        ContentType='text/csv',
+        Body=csv_row.encode('ascii')
+    )
+
+    prob = float(response['Body'].read().decode('utf-8').strip())
+    return prob
+
+
 def lambda_handler(event, context):
-    """
-    Generate predictions for today's games.
-    Loads model from S3, fetches today's games from MLB API,
-    computes features, runs predictions, saves to S3.
-    """
+    """Generate predictions for today's games."""
     target_date = event.get('date', date.today().isoformat())
     print(f"Generating predictions for {target_date}...")
 
-    print("Loading model artifacts...")
-    model, encoders, imputer = load_model_artifacts()
+    print("Loading artifacts...")
+    encoders, imputer = load_artifacts()
 
     print("Loading raw data...")
     raw_df = load_raw_data()
@@ -300,9 +294,9 @@ def lambda_handler(event, context):
     for game in games:
         print(f"  {game['away_team_full']} @ {game['home_team_full']}...")
         row = build_feature_row(game, raw_df, pitching_df, encoders)
-        X = pd.DataFrame([row])[FEATURE_COLS]
-        X_imp = imputer.transform(X)
-        prob = model.predict_proba(X_imp)[0]
+        home_prob = invoke_endpoint(row, imputer)
+        away_prob = round(1.0 - home_prob, 4)
+        home_prob = round(home_prob, 4)
 
         predictions.append({
             'date': target_date,
@@ -313,15 +307,14 @@ def lambda_handler(event, context):
             'away_team_abbrev': game['away_team'],
             'home_pitcher': game['home_pitcher'] or 'TBD',
             'away_pitcher': game['away_pitcher'] or 'TBD',
-            'home_win_probability': round(float(prob[1]), 4),
-            'away_win_probability': round(float(prob[0]), 4),
+            'home_win_probability': home_prob,
+            'away_win_probability': away_prob,
             'predicted_winner': (
-                game['home_team_full'] if prob[1] > 0.5 else game['away_team_full']
+                game['home_team_full'] if home_prob > 0.5 else game['away_team_full']
             ),
-            'confidence': round(float(max(prob)), 4),
+            'confidence': round(float(max(home_prob, away_prob)), 4),
         })
 
-    # Save predictions to S3
     key = f"predictions/{target_date}.json"
     S3_CLIENT.put_object(
         Bucket=DATA_BUCKET,

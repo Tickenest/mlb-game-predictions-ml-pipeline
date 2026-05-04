@@ -41,7 +41,7 @@ resource "aws_sagemaker_pipeline" "training" {
         Name = "FeatureEngineering"
         Type = "Processing"
         CacheConfig = {
-          Enabled = false
+          Enabled = true
           ExpireAfter = "PT1H"
         }
         Arguments = {
@@ -98,7 +98,7 @@ resource "aws_sagemaker_pipeline" "training" {
         Type      = "Training"
         DependsOn = ["FeatureEngineering"]
         CacheConfig = {
-          Enabled = false
+          Enabled = true
           ExpireAfter = "PT1H"
         }
         Arguments = {
