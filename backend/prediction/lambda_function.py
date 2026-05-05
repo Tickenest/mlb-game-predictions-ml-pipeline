@@ -142,35 +142,34 @@ def get_todays_games(target_date):
 
 
 def compute_rolling_stats(raw_df, team, as_of_date, is_home):
-    """Compute rolling team stats from raw data."""
+    """Compute rolling team stats from raw data — handles new format."""
     df = raw_df.copy()
-    df = df[df['W/L'].isin(['W', 'L', 'W-wo', 'L-wo'])].copy()
-    df['win'] = df['W/L'].isin(['W', 'W-wo']).astype(int)
-    df['is_home'] = (df['Home_Away'] == 'Home').astype(int)
-    df['R'] = pd.to_numeric(df['R'], errors='coerce')
-    df['RA'] = pd.to_numeric(df['RA'], errors='coerce')
-    df['run_diff'] = df['R'] - df['RA']
 
-    df['date_clean'] = df['Date'].str.replace(r'\s*\(\d\)$', '', regex=True)
-    df['date_str'] = df['date_clean'].str.extract(
-        r'(\w+ \d+)$'
-    )[0] + ' ' + df['season'].astype(str)
-    df['date'] = pd.to_datetime(df['date_str'], format='%b %d %Y', errors='coerce')
-    mask = df['date'].isna()
-    if mask.any():
-        df.loc[mask, 'date'] = pd.to_datetime(
-            df.loc[mask, 'date_str'], errors='coerce'
-        )
+    # New format: game_pk, date, home_team, away_team, home_score, away_score, home_win
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
 
-    team_df = df[
-        (df['Tm'] == team) &
-        (df['date'] < pd.to_datetime(as_of_date))
-    ].sort_values('date').tail(ROLLING_WINDOW)
+    # Build team perspective rows from new format
+    home_games = df[df['home_team'] == team].copy()
+    home_games['win'] = home_games['home_win']
+    home_games['R'] = home_games['home_score']
+    home_games['RA'] = home_games['away_score']
+    home_games['is_home'] = 1
+
+    away_games = df[df['away_team'] == team].copy()
+    away_games['win'] = 1 - away_games['home_win']
+    away_games['R'] = away_games['away_score']
+    away_games['RA'] = away_games['home_score']
+    away_games['is_home'] = 0
+
+    team_df = pd.concat([home_games, away_games], ignore_index=True)
+    team_df = team_df[team_df['date'] < pd.to_datetime(as_of_date)]
+    team_df = team_df.sort_values('date').tail(ROLLING_WINDOW)
 
     if len(team_df) < 5:
         return {}
 
     team_df['run_diff'] = team_df['R'] - team_df['RA']
+
     stats = {
         'rolling_win_rate': team_df['win'].mean(),
         'rolling_runs_scored': team_df['R'].mean(),
@@ -190,7 +189,6 @@ def compute_rolling_stats(raw_df, team, as_of_date, is_home):
         )
 
     return stats
-
 
 def get_pitcher_stats(pitcher_name, season, pitching_df):
     """Look up pitcher seasonal stats."""
